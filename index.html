@@ -85,7 +85,8 @@ canvas {
   transform: scale(0.96);
 }
 
-.game-wrap:fullscreen {
+.game-wrap:fullscreen,
+.game-wrap.fake-fullscreen {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,13 +94,21 @@ canvas {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  margin: 0;
 }
 
-.game-wrap:fullscreen canvas {
-  width: min(100vw, 180vh);
-  height: auto;
-  max-width: 100vw;
-  max-height: 100vh;
+.game-wrap:fullscreen canvas,
+.game-wrap.fake-fullscreen canvas {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
   border: none;
   border-radius: 0;
   background: #303c72;
@@ -123,14 +132,16 @@ canvas {
 }
 
 .game-wrap:fullscreen #fullscreen-btn,
-.game-wrap:-webkit-full-screen #fullscreen-btn {
+.game-wrap:-webkit-full-screen #fullscreen-btn,
+.game-wrap.fake-fullscreen #fullscreen-btn {
   top: 14px;
   right: 14px;
   opacity: 0.55;
 }
 
 .game-wrap:fullscreen #fullscreen-btn:hover,
-.game-wrap:-webkit-full-screen #fullscreen-btn:hover {
+.game-wrap:-webkit-full-screen #fullscreen-btn:hover,
+.game-wrap.fake-fullscreen #fullscreen-btn:hover {
   opacity: 1;
 }
 
@@ -691,6 +702,7 @@ let fullscreenEscapeGuardUntil = 0;
 let fullscreenEscapeKeyPending = false;
 let fullscreenEscapeResetTimer = null;
 let wasFullscreen = false;
+let fakeFullscreen = false; // ネイティブ全画面が使えない環境用の疑似全画面
 const GRAVITY = 0.55;
 const BLAST_X = 260;
 const BLAST_Y = 180;
@@ -6764,7 +6776,13 @@ window.addEventListener("keydown", e => {
       }, 1200);
       e.preventDefault();
       if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-      exitFullscreen().catch(() => {});
+      if (fakeFullscreen) {
+        fakeFullscreen = false;
+        if (gameWrap) gameWrap.classList.remove("fake-fullscreen");
+      } else {
+        exitFullscreen().catch(() => {});
+      }
+      updateFullscreenButton();
     }
     return;
   }
@@ -9408,7 +9426,7 @@ const fullscreenBtn = document.getElementById("fullscreen-btn");
 const gameWrap = document.querySelector(".game-wrap");
 
 function isFullscreenActive() {
-  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  return !!fakeFullscreen || !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
 
 function requestFullscreenOn(el) {
@@ -9454,11 +9472,26 @@ function updateFullscreenButton() {
 
 function toggleFullscreen() {
   getAudio();
-  const p = isFullscreenActive() ? exitFullscreen() : requestFullscreenOn(gameWrap);
+  // すでに疑似全画面中なら解除
+  if (fakeFullscreen) {
+    fakeFullscreen = false;
+    if (gameWrap) gameWrap.classList.remove("fake-fullscreen");
+    updateFullscreenButton();
+    return;
+  }
+  // ネイティブ全画面中なら解除
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    exitFullscreen();
+    return;
+  }
+  // ネイティブ全画面を試行
+  const p = requestFullscreenOn(gameWrap);
   if (p && typeof p.catch === "function") {
     p.catch(() => {
-      uiNotice = "このブラウザーでは全画面表示が使えません。F11キーをお試しください。";
-      uiNoticeTimer = 140;
+      // ネイティブ全画面が使えない環境 → 疑似全画面でフォールバック
+      fakeFullscreen = true;
+      if (gameWrap) gameWrap.classList.add("fake-fullscreen");
+      updateFullscreenButton();
     });
   }
 }
